@@ -1,0 +1,15 @@
+# E-Commerce Intent Prediction - Requirements
+# =============================================
+
+# Core
+pandas>=1.5.0
+numpy>=1.23.0
+pyspark>=3.4.0
+scikit-learn>=1.2.0
+
+# Visualization (EDA için)
+matplotlib>=3.6.0
+seaborn>=0.12.0
+
+# Jupyter (opsiyonel)
+jupyter>=1.0.0

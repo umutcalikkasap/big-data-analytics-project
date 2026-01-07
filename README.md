@@ -8,6 +8,7 @@
 A scalable Big Data analytics pipeline for predicting real-time purchase intent on e-commerce platforms. Processing **42.4 million** user interaction events to classify session-level purchase behavior. Features both **batch processing** (Pandas/Spark) and **real-time streaming** (Kafka + Spark Streaming + Streamlit Dashboard).
 
 **Course:** YZV411E Big Data Analytics - Istanbul Technical University
+
 **Authors:** Abdulkadir Külçe (150210322), Berkay Türk (150220320), Umut Çalıkkasap (150210721)
 
 ---

@@ -4,9 +4,14 @@ test_pipeline.py - Pipeline Test File
 This script tests the entire pipeline with a small data sample.
 Validates both Spark and Pandas implementations.
 
+Veri dosyasi otomatik olarak tespit edilir:
+  - Oncelik: 2019-Nov-first-week.csv (sample data)
+  - Alternatif: 2019-Oct.csv (full data)
+
 Usage:
-    python test_pipeline.py --sample 0.01  # Test with 1% sample
-    python test_pipeline.py --full         # Test with full data
+    python -m tests.test_pipeline              # Auto-detect data, 1% sample
+    python -m tests.test_pipeline --sample 0.05  # 5% sample
+    python -m tests.test_pipeline --full       # Full Spark test
 
 Authors: Abdulkadir Kulce, Berkay Turk, Umut Calikkasap
 Course: YZV411E Big Data Analytics - Istanbul Technical University
@@ -17,9 +22,29 @@ import sys
 import time
 import argparse
 
-# Set project directory
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+# Set project directory (tests/ klasorunun bir ust dizini)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
+
+# Import auto-detection from streaming config
+from src.streaming.config import DEFAULT_DATA_FILE, DATA_FILES_PRIORITY, DATA_DIR
+
+
+def get_available_data_file():
+    """
+    Mevcut veri dosyasini otomatik tespit et.
+
+    Returns:
+        tuple: (filepath, filename, is_sample)
+    """
+    for filename in DATA_FILES_PRIORITY:
+        filepath = os.path.join(DATA_DIR, filename)
+        if os.path.exists(filepath):
+            is_sample = "first-week" in filename.lower() or "sample" in filename.lower()
+            return filepath, filename, is_sample
+
+    # Fallback
+    return DEFAULT_DATA_FILE, os.path.basename(DEFAULT_DATA_FILE), False
 
 
 def test_pandas_pipeline(input_file, sample_rate=0.01):
@@ -167,6 +192,36 @@ def test_quick_spark(input_file):
         return False
 
 
+def test_streaming_imports():
+    """Test streaming module imports."""
+    print("\n" + "="*60)
+    print("TEST: Streaming Module Imports")
+    print("="*60)
+
+    try:
+        print("[1/3] Config import...")
+        from src.streaming.config import KAFKA_CONFIG, FEATURE_COLS, DEFAULT_DATA_FILE
+        print(f"      Default data: {os.path.basename(DEFAULT_DATA_FILE)}")
+
+        print("[2/3] Metrics store import...")
+        from src.streaming.metrics_store import MetricsStore
+        store = MetricsStore()
+        print("      MetricsStore OK")
+
+        print("[3/3] Online model import...")
+        from src.streaming.online_model import OnlinePredictor
+        model = OnlinePredictor()
+        prob = model.predict_proba({'view_count': 5, 'cart_count': 1, 'session_duration': 100,
+                                     'avg_price': 50, 'max_price': 100, 'unique_items': 3})
+        print(f"      OnlinePredictor OK (test prediction: {prob:.2%})")
+
+        print("\n[OK] Streaming modules verified!")
+        return True
+    except Exception as e:
+        print(f"\n[FAIL] Streaming import error: {e}")
+        return False
+
+
 def run_all_tests(input_file, sample_rate=0.01, full_test=False):
     """Run all tests."""
     print("="*60)
@@ -178,13 +233,16 @@ def run_all_tests(input_file, sample_rate=0.01, full_test=False):
     results = {}
     start = time.time()
 
-    # Test 1: Spark Syntax
+    # Test 1: Streaming Imports
+    results['streaming_imports'] = test_streaming_imports()
+
+    # Test 2: Spark Syntax
     results['spark_syntax'] = test_quick_spark(input_file)
 
-    # Test 2: Pandas Pipeline
+    # Test 3: Pandas Pipeline
     results['pandas'] = test_pandas_pipeline(input_file, sample_rate)
 
-    # Test 3: Full Spark Pipeline (optional)
+    # Test 4: Full Spark Pipeline (optional)
     if full_test:
         results['spark_full'] = test_spark_pipeline(input_file)
 
@@ -213,8 +271,8 @@ def run_all_tests(input_file, sample_rate=0.01, full_test=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pipeline Test Suite")
-    parser.add_argument("--input", "-i", default="data/2019-Oct.csv",
-                        help="CSV file path")
+    parser.add_argument("--input", "-i", default=None,
+                        help="CSV file path (auto-detected if not specified)")
     parser.add_argument("--sample", "-s", type=float, default=0.01,
                         help="Sample rate (0.0-1.0)")
     parser.add_argument("--full", action="store_true",
@@ -222,11 +280,23 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    # Auto-detect data file if not specified
+    if args.input is None:
+        input_file, filename, is_sample = get_available_data_file()
+        print(f"\n[AUTO-DETECT] Using: {filename}")
+        if is_sample:
+            print("[INFO] Sample data detected - ideal for quick testing")
+    else:
+        input_file = args.input
+
     # File check
-    if not os.path.exists(args.input):
-        print(f"ERROR: File not found: {args.input}")
-        print("Please ensure 2019-Oct.csv is in the project directory.")
+    if not os.path.exists(input_file):
+        print(f"ERROR: File not found: {input_file}")
+        print("\nAvailable options:")
+        print("  1. Place data file in data/ folder")
+        print("  2. Download from: https://www.kaggle.com/datasets/mkechinov/ecommerce-behavior-data-from-multi-category-store")
+        print("  3. Use --input flag to specify custom path")
         sys.exit(1)
 
-    success = run_all_tests(args.input, args.sample, args.full)
+    success = run_all_tests(input_file, args.sample, args.full)
     sys.exit(0 if success else 1)

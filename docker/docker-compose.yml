@@ -1,0 +1,122 @@
+# Docker Compose - Kafka Streaming Infrastructure
+#
+# Bu dosya Kafka, Zookeeper ve Redis servislerini baslatir.
+# Demo ve gelistirme ortami icin tasarlanmistir.
+#
+# Kullanim:
+#   docker-compose up -d      # Servisleri baslat
+#   docker-compose down       # Servisleri durdur
+#   docker-compose logs -f    # Loglari izle
+#
+# Authors: Abdulkadir Kulce, Berkay Turk, Umut Calikkasap
+# Course: YZV411E Big Data Analytics - Istanbul Technical University
+
+version: '3.8'
+
+services:
+  # ==========================================================================
+  # ZOOKEEPER - Kafka coordination service
+  # ==========================================================================
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================================================
+  # KAFKA - Message broker
+  # ==========================================================================
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 1
+      KAFKA_LOG_RETENTION_BYTES: 1073741824  # 1GB
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # ==========================================================================
+  # KAFKA-INIT - Topic creation
+  # ==========================================================================
+  kafka-init:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      "
+      echo '>>> Waiting for Kafka to be ready...'
+      sleep 5
+
+      echo '>>> Creating ecommerce-events topic...'
+      kafka-topics --create --if-not-exists \
+        --topic ecommerce-events \
+        --bootstrap-server kafka:29092 \
+        --partitions 3 \
+        --replication-factor 1
+
+      echo '>>> Topic created successfully!'
+      kafka-topics --describe --topic ecommerce-events --bootstrap-server kafka:29092
+      "
+
+  # ==========================================================================
+  # REDIS - Metrics cache (optional)
+  # ==========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================================================
+  # KAFKA-UI - Web interface for debugging (optional)
+  # ==========================================================================
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+
+volumes:
+  redis_data:
